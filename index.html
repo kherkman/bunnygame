@@ -21,6 +21,7 @@ const Game = {
     STATE_START_SCREEN:'start_screen',STATE_PLAYING:'playing',STATE_NEXT_LEVEL_TRANSITION:'next_level_transition',STATE_GAME_OVER:'game_over',currentState:'',
     level:1,carrotsCollected:0,TOTAL_CARROTS_PER_LEVEL:4,map:[],shorelinePaths: [],carrots:[],decorations:[],
     players: [],
+    joysticks: [],
     cameras: [],
     ui:{restartButton:{x:0,y:0,width:0,height:0,text:"RESTART LVL"}},
     animation:{bunnyWalkFrameDuration:0.15,sparkleTimer:0,sparkleSpawnInterval:0.05,sparkles:[]},
@@ -39,6 +40,8 @@ const Game = {
         this.ui.restartButton={width:bW,height:bH,text:"RESTART LVL"};
         this.players.push(this.createPlayerObject());
         this.players.push(this.createPlayerObject());
+        this.joysticks.push(this.createJoystickObject());
+        this.joysticks.push(this.createJoystickObject());
         this.cameras.push({x:0,y:0});
         this.cameras.push({x:0,y:0});
         this.createPixelArtAssets();
@@ -54,6 +57,7 @@ const Game = {
     },
 
     createPlayerObject:function(){return{x:0,y:0,width:48,height:48,speed:120,vx:0,vy:0,walkAnimTimer:0,walkFrame:0,isMoving:false};},
+    createJoystickObject:function(){return{isActive:false,touchId:null,startX:0,startY:0,currentX:0,currentY:0,dx:0,dy:0,maxRadius:60,deadZone:10};},
     setGameState:function(s){this.currentState=s;if(s===this.STATE_NEXT_LEVEL_TRANSITION)this.transitionTimer=1.0;},
     startGame:function(){this.level=1;this.setupLevel(this.level);},
     restartCurrentLevel:function(){this.setupLevel(this.level);},
@@ -185,7 +189,7 @@ const Game = {
     // --- Game Loop and Update Logic ---
     gameLoop:function(t){requestAnimationFrame(this.gameLoop.bind(this));this.deltaTime=(t-this.lastTime)/1000;this.lastTime=t;if(this.deltaTime>0.1)this.deltaTime=0.1;this.update();this.render();},
     update:function(){
-        this.animation.sparkleTimer+=this.deltaTime;if(this.animation.sparkleTimer>=this.animation.sparkleSpawnInterval){this.animation.sparkleTimer=0;const sTX=Math.floor(this.camera.x/this.TILE_SIZE),sTY=Math.floor(this.camera.y/this.TILE_SIZE),eTX=Math.ceil((this.camera.x+this.canvas.width)/this.TILE_SIZE),eTY=Math.ceil((this.camera.y+this.canvas.height)/this.TILE_SIZE);for(let y=sTY;y<eTY;y++){for(let x=sTX;x<eTX;x++){if(this.getTileTypeAt(x,y)===this.TILE_WATER&&this.random()<0.05){this.animation.sparkles.push({worldX:(x+this.random())*this.TILE_SIZE,worldY:(y+this.random())*this.TILE_SIZE,lifetime:0.3+this.random()*0.4});}}}}
+        this.animation.sparkleTimer+=this.deltaTime;if(this.animation.sparkleTimer>=this.animation.sparkleSpawnInterval){this.animation.sparkleTimer=0;const cam=this.cameras[0];const sTX=Math.floor(cam.x/this.TILE_SIZE),sTY=Math.floor(cam.y/this.TILE_SIZE),eTX=Math.ceil((cam.x+this.canvas.width)/this.TILE_SIZE),eTY=Math.ceil((cam.y+this.canvas.height)/this.TILE_SIZE);for(let y=sTY;y<eTY;y++){for(let x=sTX;x<eTX;x++){if(this.getTileTypeAt(x,y)===this.TILE_WATER&&this.random()<0.05){this.animation.sparkles.push({worldX:(x+this.random())*this.TILE_SIZE,worldY:(y+this.random())*this.TILE_SIZE,lifetime:0.3+this.random()*0.4});}}}}
         for(let i=this.animation.sparkles.length-1;i>=0;i--){this.animation.sparkles[i].lifetime-=this.deltaTime;if(this.animation.sparkles[i].lifetime<=0)this.animation.sparkles.splice(i,1);}
         for(let i=0;i<this.players.length;i++){this.updatePlayerAnimation(this.players[i]);}
         switch(this.currentState){
@@ -207,14 +211,30 @@ const Game = {
     checkLevelCompletion:function(){if(this.carrotsCollected>=this.TOTAL_CARROTS_PER_LEVEL)this.setGameState(this.STATE_NEXT_LEVEL_TRANSITION);},
     
     // --- Player Logic ---
-    updatePlayer:function(player,playerIndex){let kIX=0,kIY=0;if(playerIndex===0){if(this.keysPressed.a)kIX-=1;if(this.keysPressed.d)kIX+=1;if(this.keysPressed.w)kIY-=1;if(this.keysPressed.s)kIY+=1;}else{if(this.keysPressed.ArrowLeft)kIX-=1;if(this.keysPressed.ArrowRight)kIX+=1;if(this.keysPressed.ArrowUp)kIY-=1;if(this.keysPressed.ArrowDown)kIY+=1;}
-    const kM=(kIX!==0||kIY!==0);if(kM&&kIX!==0&&kIY!==0){const L=Math.sqrt(2);kIX/=L;kIY/=L;}
-    if(kM){player.vx=kIX*player.speed;player.vy=kIY*player.speed;player.isMoving=true;}else{player.vx=0;player.vy=0;player.isMoving=false;}
-    let nX=player.x+player.vx*this.deltaTime,nY=player.y+player.vy*this.deltaTime;const phw=player.width/4,phh=player.height/2.5;
-    if(player.vx!==0){const cTX=(player.vx>0)?Math.floor((nX+phw-1)/this.TILE_SIZE):Math.floor((nX-phw)/this.TILE_SIZE);const Y1=Math.floor((player.y-phh+1)/this.TILE_SIZE),Y2=Math.floor((player.y+phh-1)/this.TILE_SIZE);if(this.isTileSolid(this.getTileTypeAt(cTX,Y1))||this.isTileSolid(this.getTileTypeAt(cTX,Y2))){nX=(player.vx>0)?cTX*this.TILE_SIZE-phw:(cTX+1)*this.TILE_SIZE+phw;player.vx=0;}}
-    player.x=nX;if(player.vy!==0){const cTY=(player.vy>0)?Math.floor((nY+phh-1)/this.TILE_SIZE):Math.floor((nY-phh)/this.TILE_SIZE);const X1=Math.floor((player.x-phw+1)/this.TILE_SIZE),X2=Math.floor((player.x+phw-1)/this.TILE_SIZE);if(this.isTileSolid(this.getTileTypeAt(X1,cTY))||this.isTileSolid(this.getTileTypeAt(X2,cTY))){nY=(player.vy>0)?cTY*this.TILE_SIZE-phh:(cTY+1)*this.TILE_SIZE+phh;player.vy=0;}}
-    player.y=nY;player.x=Math.max(phw,Math.min(player.x,this.MAP_WIDTH_PX-phw));player.y=Math.max(phh,Math.min(player.y,this.MAP_HEIGHT_PX-phh));
-    const curTX=Math.floor(player.x/this.TILE_SIZE),curTY=Math.floor(player.y/this.TILE_SIZE); // if(this.getTileTypeAt(curTX,curTY)===this.TILE_WATER){this.setGameState(this.STATE_GAME_OVER);return;}
+    updatePlayer:function(player,playerIndex){
+        let kIX=0,kIY=0;
+        // Keyboard Input
+        if(playerIndex===0){if(this.keysPressed.a)kIX-=1;if(this.keysPressed.d)kIX+=1;if(this.keysPressed.w)kIY-=1;if(this.keysPressed.s)kIY+=1;}else{if(this.keysPressed.ArrowLeft)kIX-=1;if(this.keysPressed.ArrowRight)kIX+=1;if(this.keysPressed.ArrowUp)kIY-=1;if(this.keysPressed.ArrowDown)kIY+=1;}
+        
+        // Joystick Input
+        const joystick = this.joysticks[playerIndex];
+        if (joystick.isActive) { kIX += joystick.dx; kIY += joystick.dy; }
+        
+        const kM=(kIX!==0||kIY!==0);
+        
+        if(kM){
+            const len = Math.sqrt(kIX*kIX + kIY*kIY);
+            if (len > 1) { kIX /= len; kIY /= len; }
+            player.vx=kIX*player.speed;player.vy=kIY*player.speed;player.isMoving=true;
+        }else{
+            player.vx=0;player.vy=0;player.isMoving=false;
+        }
+
+        let nX=player.x+player.vx*this.deltaTime,nY=player.y+player.vy*this.deltaTime;const phw=player.width/4,phh=player.height/2.5;
+        if(player.vx!==0){const cTX=(player.vx>0)?Math.floor((nX+phw-1)/this.TILE_SIZE):Math.floor((nX-phw)/this.TILE_SIZE);const Y1=Math.floor((player.y-phh+1)/this.TILE_SIZE),Y2=Math.floor((player.y+phh-1)/this.TILE_SIZE);if(this.isTileSolid(this.getTileTypeAt(cTX,Y1))||this.isTileSolid(this.getTileTypeAt(cTX,Y2))){nX=(player.vx>0)?cTX*this.TILE_SIZE-phw:(cTX+1)*this.TILE_SIZE+phw;player.vx=0;}}
+        player.x=nX;if(player.vy!==0){const cTY=(player.vy>0)?Math.floor((nY+phh-1)/this.TILE_SIZE):Math.floor((nY-phh)/this.TILE_SIZE);const X1=Math.floor((player.x-phw+1)/this.TILE_SIZE),X2=Math.floor((player.x+phw-1)/this.TILE_SIZE);if(this.isTileSolid(this.getTileTypeAt(X1,cTY))||this.isTileSolid(this.getTileTypeAt(X2,cTY))){nY=(player.vy>0)?cTY*this.TILE_SIZE-phh:(cTY+1)*this.TILE_SIZE+phh;player.vy=0;}}
+        player.y=nY;player.x=Math.max(phw,Math.min(player.x,this.MAP_WIDTH_PX-phw));player.y=Math.max(phh,Math.min(player.y,this.MAP_HEIGHT_PX-phh));
+        const curTX=Math.floor(player.x/this.TILE_SIZE),curTY=Math.floor(player.y/this.TILE_SIZE); // if(this.getTileTypeAt(curTX,curTY)===this.TILE_WATER){this.setGameState(this.STATE_GAME_OVER);return;}
     },
     updatePlayerAnimation:function(player){if(player.isMoving){player.walkAnimTimer+=this.deltaTime;if(player.walkAnimTimer>=this.animation.bunnyWalkFrameDuration){player.walkAnimTimer=0;player.walkFrame=(player.walkFrame+1)%4;}}},
 
@@ -228,6 +248,7 @@ const Game = {
                 this.ctx.save();this.ctx.beginPath();this.ctx.rect(0,0,viewportWidth,this.canvas.height);this.ctx.clip();this.renderViewport(0);this.ctx.restore();
                 this.ctx.save();this.ctx.beginPath();this.ctx.rect(viewportWidth,0,viewportWidth,this.canvas.height);this.ctx.clip();this.ctx.translate(viewportWidth,0);this.renderViewport(1);this.ctx.restore();
                 this.ctx.fillStyle='#000';this.ctx.fillRect(viewportWidth-2,0,4,this.canvas.height);
+                this.renderJoysticks();
                 this.renderUI();if(this.currentState===this.STATE_NEXT_LEVEL_TRANSITION)this.renderNextLevelMessage();
                 break;
             case this.STATE_GAME_OVER:this.renderGameOverScreen();break;
@@ -279,19 +300,23 @@ const Game = {
         this.ctx.drawImage(frame,sX,sY);
     },
     renderUI:function(){this.ctx.fillStyle='#FFFFFF';this.ctx.font="18px 'Courier New',monospace";const b=this.ui.restartButton;this.ctx.textAlign='left';this.ctx.textBaseline='top';this.ctx.fillText(`Level: ${this.level}`,10,15);this.ctx.fillText(`Carrots: ${this.carrotsCollected}/${this.TOTAL_CARROTS_PER_LEVEL}`,10,15+22);this.ctx.strokeStyle='#FFFFFF';this.ctx.strokeRect(b.x,b.y,b.width,b.height);this.ctx.textAlign='center';this.ctx.textBaseline='middle';this.ctx.fillText(b.text,b.x+b.width/2,b.y+b.height/2);},
+    renderJoysticks:function(){if(this.currentState!==this.STATE_PLAYING)return;this.ctx.save();for(const joystick of this.joysticks){if(joystick.isActive){this.ctx.beginPath();this.ctx.arc(joystick.startX,joystick.startY,joystick.maxRadius,0,Math.PI*2);this.ctx.fillStyle='rgba(255,255,255,0.2)';this.ctx.fill();this.ctx.beginPath();this.ctx.arc(joystick.currentX,joystick.currentY,joystick.maxRadius/2,0,Math.PI*2);this.ctx.fillStyle='rgba(255,255,255,0.4)';this.ctx.fill();}}this.ctx.restore();},
     renderStartScreen:function(){this.ctx.fillStyle='#5c8a42';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);this.ctx.fillStyle='#FFFFFF';this.ctx.font="bold 30px 'Courier New',monospace";this.ctx.textAlign='center';this.ctx.fillText("BUNNY QUEST: 2 PLAYER",this.canvas.width/2,this.canvas.height*0.2);this.ctx.font="18px 'Courier New',monospace";
-    const i=["P1 (Left): WASD Keys to Move.","P2 (Right): Arrow Keys to Move.","Collect 4 carrots together.","","TAP TO START"];let yP=this.canvas.height*0.4;for(const l of i){this.ctx.fillText(l,this.canvas.width/2,yP);yP+=25;}this.ctx.drawImage(this.assets.bunnyFramesP1[0], this.canvas.width/2 - 24, yP);},
-    renderGameOverScreen:function(){this.ctx.fillStyle='rgba(0,0,0,0.7)';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);this.ctx.fillStyle='#FF0000';this.ctx.font="bold 36px 'Courier New',monospace";this.ctx.textAlign='center';this.ctx.fillText("GAME OVER",this.canvas.width/2,this.canvas.height/2-30);this.ctx.fillStyle='#FFFFFF';this.ctx.font="20px 'Courier New',monospace";this.ctx.fillText("TAP TO START A NEW GAME",this.canvas.width/2,this.canvas.height/2+30);},
+    const i=["P1 (Left): WASD Keys to Move.","P2 (Right): Arrow Keys to Move.","Collect 4 carrots together.","","TAP OR CLICK TO START"];let yP=this.canvas.height*0.4;for(const l of i){this.ctx.fillText(l,this.canvas.width/2,yP);yP+=25;}this.ctx.drawImage(this.assets.bunnyFramesP1[0], this.canvas.width/2 - 24, yP);},
+    renderGameOverScreen:function(){this.ctx.fillStyle='rgba(0,0,0,0.7)';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);this.ctx.fillStyle='#FF0000';this.ctx.font="bold 36px 'Courier New',monospace";this.ctx.textAlign='center';this.ctx.fillText("GAME OVER",this.canvas.width/2,this.canvas.height/2-30);this.ctx.fillStyle='#FFFFFF';this.ctx.font="20px 'Courier New',monospace";this.ctx.fillText("TAP OR CLICK TO START A NEW GAME",this.canvas.width/2,this.canvas.height/2+30);},
     renderNextLevelMessage:function(){this.ctx.fillStyle='rgba(0,0,0,0.5)';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);this.ctx.fillStyle='#FFFF00';this.ctx.font="bold 30px 'Courier New',monospace";this.ctx.textAlign='center';this.ctx.textBaseline='middle';this.ctx.fillText("NEXT LEVEL!",this.canvas.width/2,this.canvas.height/2);},
     
     // --- Event Listeners and Input Handling ---
     resizeGame:function(){this.canvas.width=window.innerWidth;this.canvas.height=window.innerHeight;this.ctx.imageSmoothingEnabled=false;this.ui.restartButton.x=this.canvas.width-this.ui.restartButton.width-10;this.ui.restartButton.y=10;for(let i=0;i<2;i++)if(this.currentState===this.STATE_PLAYING)this.updateCamera(i);},
-    addEventListeners:function(){window.addEventListener('resize',this.resizeGame.bind(this));this.canvas.addEventListener('mousedown',this.handleMouseDown.bind(this));window.addEventListener('keydown',this.handleKeyDown.bind(this));window.addEventListener('keyup',this.handleKeyUp.bind(this));},
+    addEventListeners:function(){window.addEventListener('resize',this.resizeGame.bind(this));this.canvas.addEventListener('mousedown',this.handleMouseDown.bind(this));this.canvas.addEventListener('touchstart',this.handleTouchStart.bind(this),{passive:false});this.canvas.addEventListener('touchmove',this.handleTouchMove.bind(this),{passive:false});this.canvas.addEventListener('touchend',this.handleTouchEnd.bind(this),{passive:false});this.canvas.addEventListener('touchcancel',this.handleTouchEnd.bind(this),{passive:false});window.addEventListener('keydown',this.handleKeyDown.bind(this));window.addEventListener('keyup',this.handleKeyUp.bind(this));},
     handleKeyDown:function(e){let key=e.key;if(key.length===1)key=key.toLowerCase();if(key in this.keysPressed){this.keysPressed[key]=true;if(this.currentState===this.STATE_PLAYING)e.preventDefault();}},
     handleKeyUp:function(e){let key=e.key;if(key.length===1)key=key.toLowerCase();if(key in this.keysPressed){this.keysPressed[key]=false;if(this.currentState===this.STATE_PLAYING)e.preventDefault();}},
     handleMouseDown:function(e){const r=this.canvas.getBoundingClientRect();this.processPointerDown(e.clientX-r.left,e.clientY-r.top);},
-    processPointerDown:function(x,y){if(this.currentState===this.STATE_START_SCREEN||this.currentState===this.STATE_GAME_OVER){this.startGame();return;}
-    if(this.currentState===this.STATE_PLAYING){const b=this.ui.restartButton;if(x>=b.x&&x<=b.x+b.width&&y>=b.y&&y<=b.y+b.height){this.restartCurrentLevel();return;}}},
+    processPointerDown:function(x,y){if(this.currentState===this.STATE_START_SCREEN||this.currentState===this.STATE_GAME_OVER){this.startGame();return true;}
+    if(this.currentState===this.STATE_PLAYING){const b=this.ui.restartButton;if(x>=b.x&&x<=b.x+b.width&&y>=b.y&&y<=b.y+b.height){this.restartCurrentLevel();return true;}}return false;},
+    handleTouchStart:function(e){e.preventDefault();const r=this.canvas.getBoundingClientRect();const viewportWidth=this.canvas.width/2;for(const touch of e.changedTouches){const x=touch.clientX-r.left;const y=touch.clientY-r.top;if(this.processPointerDown(x,y)){continue;}if(this.currentState!==this.STATE_PLAYING)continue;const playerIndex=(x<viewportWidth)?0:1;const joystick=this.joysticks[playerIndex];if(!joystick.isActive){joystick.isActive=true;joystick.touchId=touch.identifier;joystick.startX=x;joystick.startY=y;joystick.currentX=x;joystick.currentY=y;joystick.dx=0;joystick.dy=0;}}},
+    handleTouchMove:function(e){e.preventDefault();const r=this.canvas.getBoundingClientRect();for(const touch of e.changedTouches){for(const joystick of this.joysticks){if(joystick.isActive&&joystick.touchId===touch.identifier){joystick.currentX=touch.clientX-r.left;joystick.currentY=touch.clientY-r.top;const vecX=joystick.currentX-joystick.startX;const vecY=joystick.currentY-joystick.startY;let dist=Math.sqrt(vecX*vecX+vecY*vecY);if(dist<joystick.deadZone){joystick.dx=0;joystick.dy=0;}else{joystick.dx=vecX/dist;joystick.dy=vecY/dist;if(dist>joystick.maxRadius){joystick.currentX=joystick.startX+joystick.dx*joystick.maxRadius;joystick.currentY=joystick.startY+joystick.dy*joystick.maxRadius;}}break;}}}},
+    handleTouchEnd:function(e){e.preventDefault();for(const touch of e.changedTouches){for(const joystick of this.joysticks){if(joystick.isActive&&joystick.touchId===touch.identifier){joystick.isActive=false;joystick.touchId=null;joystick.dx=0;joystick.dy=0;break;}}}},
 };
 
 window.onload=function(){Game.init();};
