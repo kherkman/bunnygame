@@ -23,7 +23,7 @@ const Game = {
     players: [],
     joysticks: [],
     cameras: [],
-    ui:{restartButton:{x:0,y:0,width:0,height:0,text:"RESTART LVL"}},
+    ui:{restartButton:{x:0,y:0,width:0,height:0,text:"RESTART LVL"}, grassToggleButton:{x:0,y:0,width:0,height:0,text:""}, shorelineToggleButton:{x:0,y:0,width:0,height:0,text:""}, grassOpaque:true, shorelineOpaque: true},
     animation:{bunnyWalkFrameDuration:0.15,sparkleTimer:0,sparkleSpawnInterval:0.05,sparkles:[]},
     lastTime:0,deltaTime:0,transitionTimer:0,rngSeed:0,setSeed:function(s){this.rngSeed=s;},random:function(){const a=1664525,c=1013904223,m=Math.pow(2,32);this.rngSeed=(a*this.rngSeed+c)%m;return this.rngSeed/m;},
     TILE_GRASS:0,TILE_WATER:1,TILE_TREE:2,TILE_ROCK:3,FLOWER_TYPE_RED:0,FLOWER_TYPE_YELLOW:1,assets:{},
@@ -36,8 +36,10 @@ const Game = {
         this.canvas=document.getElementById('gameCanvas');
         this.ctx=this.canvas.getContext('2d');
         this.ctx.imageSmoothingEnabled=false;
-        const bW=120,bH=30;
+        const bW=120,bH=30, tbW=160; // tbW for toggle buttons
         this.ui.restartButton={width:bW,height:bH,text:"RESTART LVL"};
+        this.ui.grassToggleButton={width:tbW, height:bH, text:""};
+        this.ui.shorelineToggleButton={width:tbW, height:bH, text:""};
         this.players.push(this.createPlayerObject());
         this.players.push(this.createPlayerObject());
         this.joysticks.push(this.createJoystickObject());
@@ -68,12 +70,15 @@ const Game = {
         let a=0,lS=0,mLP=0.30,iA=(this.MAP_WIDTH_TILES-2)*(this.MAP_HEIGHT_TILES-2),rA=iA*mLP;
         do{this.generateComplexMap();lS=this.ensureConnectedLand();a++;if(lS<rA&&a<5){let regenSeed=Date.now()+Math.floor(Math.random()*1000000)+this.level+a*100;this.setSeed(regenSeed);}}while(lS<rA&&a<5);
         if(lS<rA)this.generateSimpleFallbackMap();
+        this.fillInlets();
         this.generateShorelinePaths();
         this.synchronizeMapToVisuals();
+        
         this.placeObstacles();
         this.placeFlowers();
         this.placePlayers();
         this.placeCarrots();
+
         for(let i=0;i<2;i++){const player=this.players[i];player.vx=0;player.vy=0;player.isMoving=false;this.updateCamera(i);}
         this.setGameState(this.STATE_PLAYING);
     },
@@ -88,6 +93,29 @@ const Game = {
     for(let y=1;y<this.MAP_HEIGHT_TILES-1;y++){for(let x=1;x<this.MAP_WIDTH_TILES-1;x++){if(this.map[y][x]===this.TILE_GRASS&&!v[y][x]){let cA=[],q=[{x,y}];v[y][x]=true;cA.push({x,y});while(q.length>0){let c=q.shift();const n=[{dx:0,dy:1},{dx:0,dy:-1},{dx:1,dy:0},{dx:-1,dy:0}];for(const nn of n){const nx=c.x+nn.dx,ny=c.y+nn.dy;if(nx>0&&nx<this.MAP_WIDTH_TILES-1&&ny>0&&ny<this.MAP_HEIGHT_TILES-1&&this.map[ny][nx]===this.TILE_GRASS&&!v[ny][nx]){v[ny][nx]=true;cA.push({x:nx,y:ny});q.push({x:nx,y:ny});}}}if(cA.length>mA){mA=cA.length;lA=cA;}}}}
     let nM=[];for(let y=0;y<this.MAP_HEIGHT_TILES;y++){nM[y]=[];for(let x=0;x<this.MAP_WIDTH_TILES;x++)nM[y][x]=this.TILE_WATER;}for(const c of lA)nM[c.y][c.x]=this.TILE_GRASS;this.map=nM;
     for(let y=0;y<this.MAP_HEIGHT_TILES;y++){this.map[y][0]=this.TILE_WATER;this.map[y][this.MAP_WIDTH_TILES-1]=this.TILE_WATER;}for(let x=0;x<this.MAP_WIDTH_TILES;x++){this.map[0][x]=this.TILE_WATER;this.map[this.MAP_HEIGHT_TILES-1][x]=this.TILE_WATER;}return mA;},
+    fillInlets: function() {
+        let newMap = [];
+        for (let y = 0; y < this.MAP_HEIGHT_TILES; y++) {
+            newMap[y] = [...this.map[y]];
+        }
+        for (let y = 1; y < this.MAP_HEIGHT_TILES - 1; y++) {
+            for (let x = 1; x < this.MAP_WIDTH_TILES - 1; x++) {
+                if (this.map[y][x] === this.TILE_WATER) {
+                    let waterNeighborCount = 0;
+                    const neighbors = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+                    for (const n of neighbors) {
+                        if (this.map[y + n[1]][x + n[0]] === this.TILE_WATER) {
+                            waterNeighborCount++;
+                        }
+                    }
+                    if (waterNeighborCount <= 1) {
+                        newMap[y][x] = this.TILE_GRASS;
+                    }
+                }
+            }
+        }
+        this.map = newMap;
+    },
     generateShorelinePaths:function(){this.shorelinePaths=[];const visitedEdges=new Set();const DIRS=[[0,-1],[1,0],[0,1],[-1,0]];
     for(let y=0;y<this.MAP_HEIGHT_TILES;y++){for(let x=0;x<this.MAP_WIDTH_TILES;x++){if(this.map[y][x]!==this.TILE_GRASS)continue;
     for(let i=0;i<4;i++){const nx=x+DIRS[i][0];const ny=y+DIRS[i][1];const edgeKey=`${x},${y},${nx},${ny}`;
@@ -99,13 +127,7 @@ const Game = {
     if(path[0].x===startNode.x*this.TILE_SIZE&&path[0].y===startNode.y*this.TILE_SIZE&&path.length>1){break;}}
     if(path.length>1){this.shorelinePaths.push(path);}}}}}},
     synchronizeMapToVisuals: function() {
-        // This function ensures the logical map (this.map) perfectly matches the
-        // visual representation of the landmass that will be drawn by filling
-        // the shoreline paths. It works by checking the center of each tile
-        // against the combined path of all landmasses.
         const ctx = this.ctx;
-
-        // Combine all shoreline paths into a single Path2D object.
         const landPath = new Path2D();
         for (const path of this.shorelinePaths) {
             if (path.length < 2) continue;
@@ -115,16 +137,12 @@ const Game = {
             }
             landPath.closePath();
         }
-
-        // Create a new map based on the visual paths.
         let newMap = [];
         for (let y = 0; y < this.MAP_HEIGHT_TILES; y++) {
             newMap[y] = [];
             for (let x = 0; x < this.MAP_WIDTH_TILES; x++) {
                 const centerX = (x + 0.5) * this.TILE_SIZE;
                 const centerY = (y + 0.5) * this.TILE_SIZE;
-
-                // If the tile's center is inside the visual land area, it's grass. Otherwise, it's water.
                 if (ctx.isPointInPath(landPath, centerX, centerY)) {
                     newMap[y][x] = this.TILE_GRASS;
                 } else {
@@ -132,18 +150,55 @@ const Game = {
                 }
             }
         }
-        // Replace the old map with the new, perfectly synchronized one.
         this.map = newMap;
     },
-    placeObstacles:function(){const tO=Math.floor(this.random()*((this.MAP_WIDTH_TILES*this.MAP_HEIGHT_TILES)/10))+Math.floor(this.MAP_WIDTH_TILES/1.5);let pC=0,a=0;while(pC<tO&&a<tO*10){const oX=Math.floor(this.random()*(this.MAP_WIDTH_TILES-2))+1,oY=Math.floor(this.random()*(this.MAP_HEIGHT_TILES-2))+1;if(this.map[oY]&&this.map[oY][oX]===this.TILE_GRASS){this.map[oY][oX]=(this.random()<0.6)?this.TILE_TREE:this.TILE_ROCK;pC++;}a++;}},
-    placeFlowers:function(){this.decorations=[];const fC=0.1;for(let y=1;y<this.MAP_HEIGHT_TILES-1;y++){for(let x=1;x<this.MAP_WIDTH_TILES-1;x++){if(this.map[y][x]===this.TILE_GRASS&&this.random()<fC){this.decorations.push({x:x,y:y,type:(this.random()<0.5)?this.FLOWER_TYPE_RED:this.FLOWER_TYPE_YELLOW});}}}},
+    placeObstacles:function(){
+        const tO=Math.floor(this.random()*((this.MAP_WIDTH_TILES*this.MAP_HEIGHT_TILES)/10))+Math.floor(this.MAP_WIDTH_TILES/1.5);let pC=0,a=0;
+        while(pC<tO&&a<tO*10){
+            const oX=Math.floor(this.random()*(this.MAP_WIDTH_TILES-2))+1,oY=Math.floor(this.random()*(this.MAP_HEIGHT_TILES-2))+1;
+            if(this.map[oY]&&this.map[oY][oX]===this.TILE_GRASS){
+                this.map[oY][oX]=(this.random()<0.6)?this.TILE_TREE:this.TILE_ROCK;
+                pC++;
+            }
+            a++;
+        }
+    },
+    placeFlowers:function(){
+        this.decorations=[];
+        const fC=0.1;
+        for(let y=1;y<this.MAP_HEIGHT_TILES-1;y++){
+            for(let x=1;x<this.MAP_WIDTH_TILES-1;x++){
+                if(this.map[y][x]===this.TILE_GRASS&&this.random()<fC){
+                    this.decorations.push({x:x,y:y,type:(this.random()<0.5)?this.FLOWER_TYPE_RED:this.FLOWER_TYPE_YELLOW});
+                }
+            }
+        }
+    },
     placePlayers:function(){let p1Pos={x:-1,y:-1};const findSpot=(avoidPos=null)=>{let attempts=0;while(attempts<1000){const tX=Math.floor(this.random()*(this.MAP_WIDTH_TILES-2))+1,tY=Math.floor(this.random()*(this.MAP_HEIGHT_TILES-2))+1;if(this.map[tY]&&this.map[tY][tX]===this.TILE_GRASS){if(!avoidPos||(Math.abs(tX-avoidPos.x)>1||Math.abs(tY-avoidPos.y)>1)){return{x:tX,y:tY};}}
     attempts++;}for(let y=1;y<this.MAP_HEIGHT_TILES-1;y++){for(let x=1;x<this.MAP_WIDTH_TILES-1;x++){if(this.map[y][x]===this.TILE_GRASS){if(!avoidPos||(x!==avoidPos.x&&y!==avoidPos.y))return{x,y};}}}
     return{x:this.MAP_WIDTH_TILES/2,y:this.MAP_HEIGHT_TILES/2};};p1Pos=findSpot();this.players[0].x=p1Pos.x*this.TILE_SIZE+this.TILE_SIZE/2;this.players[0].y=p1Pos.y*this.TILE_SIZE+this.TILE_SIZE/2;const p2Pos=findSpot(p1Pos);this.players[1].x=p2Pos.x*this.TILE_SIZE+this.TILE_SIZE/2;this.players[1].y=p2Pos.y*this.TILE_SIZE+this.TILE_SIZE/2;},
-    placeCarrots:function(){this.carrots=[];let pC=0,a=0;const p1SX=Math.floor(this.players[0].x/this.TILE_SIZE),p1SY=Math.floor(this.players[0].y/this.TILE_SIZE);const p2SX=Math.floor(this.players[1].x/this.TILE_SIZE),p2SY=Math.floor(this.players[1].y/this.TILE_SIZE);
-    while(pC<this.TOTAL_CARROTS_PER_LEVEL&&a<4000){const tX=Math.floor(this.random()*(this.MAP_WIDTH_TILES-2))+1,tY=Math.floor(this.random()*(this.MAP_HEIGHT_TILES-2))+1;
-    if(this.map[tY]&&this.map[tY][tX]===this.TILE_GRASS&&(tX!==p1SX||tY!==p1SY)&&(tX!==p2SX||tY!==p2SY)){let e=false;for(const c of this.carrots)if(c.x===tX&&c.y===tY){e=true;break;}
-    if(!e){let fH=false;for(const d of this.decorations)if(d.x===tX&&d.y===tY){fH=true;break;}if(!fH){this.carrots.push({x:tX,y:tY,collected:false});pC++;}}}a++;}},
+    placeCarrots:function(){
+        this.carrots=[];
+        let pC=0,a=0;
+        const p1SX=Math.floor(this.players[0].x/this.TILE_SIZE),p1SY=Math.floor(this.players[0].y/this.TILE_SIZE);
+        const p2SX=Math.floor(this.players[1].x/this.TILE_SIZE),p2SY=Math.floor(this.players[1].y/this.TILE_SIZE);
+        while(pC<this.TOTAL_CARROTS_PER_LEVEL&&a<4000){
+            const tX=Math.floor(this.random()*(this.MAP_WIDTH_TILES-2))+1,tY=Math.floor(this.random()*(this.MAP_HEIGHT_TILES-2))+1;
+            if(this.map[tY]&&this.map[tY][tX]===this.TILE_GRASS&&(tX!==p1SX||tY!==p1SY)&&(tX!==p2SX||tY!==p2SY)){
+                let e=false;
+                for(const c of this.carrots)if(c.x===tX&&c.y===tY){e=true;break;}
+                if(!e){
+                    let fH=false;
+                    for(const d of this.decorations)if(d.x===tX&&d.y===tY){fH=true;break;}
+                    if(!fH){
+                        this.carrots.push({x:tX,y:tY,collected:false});
+                        pC++;
+                    }
+                }
+            }
+            a++;
+        }
+    },
 
     // --- Asset Creation ---
     createTextureCanvas: function(baseColor, highlightColor1, highlightColor2, style) {
@@ -203,8 +258,6 @@ const Game = {
         }
     },
     getTileTypeAt:function(x,y){if(x<0||x>=this.MAP_WIDTH_TILES||y<0||y>=this.MAP_HEIGHT_TILES)return this.TILE_WATER;return this.map[y][x];},
-    // CONFIRMED: This is the single source of truth for what is solid.
-    // Rocks and decorations are NOT solid. Only Trees and Water are obstacles.
     isTileSolid:function(t){return t===this.TILE_TREE||t===this.TILE_WATER;},
     updateCamera:function(playerIndex){const player=this.players[playerIndex];const camera=this.cameras[playerIndex];const viewportWidth=this.canvas.width/2;camera.x=player.x-viewportWidth/2;camera.y=player.y-this.canvas.height/2;camera.x=Math.max(0,Math.min(camera.x,this.MAP_WIDTH_PX-viewportWidth));camera.y=Math.max(0,Math.min(camera.y,this.MAP_HEIGHT_PX-this.canvas.height));},
     checkCarrotCollection:function(){for(const player of this.players){const pX=Math.floor(player.x/this.TILE_SIZE);const pY=Math.floor(player.y/this.TILE_SIZE);for(let i=this.carrots.length-1;i>=0;i--){const c=this.carrots[i];if(!c.collected&&c.x===pX&&c.y===pY){c.collected=true;this.carrotsCollected++;}}}},
@@ -213,15 +266,10 @@ const Game = {
     // --- Player Logic ---
     updatePlayer:function(player,playerIndex){
         let kIX=0,kIY=0;
-        // Keyboard Input
         if(playerIndex===0){if(this.keysPressed.a)kIX-=1;if(this.keysPressed.d)kIX+=1;if(this.keysPressed.w)kIY-=1;if(this.keysPressed.s)kIY+=1;}else{if(this.keysPressed.ArrowLeft)kIX-=1;if(this.keysPressed.ArrowRight)kIX+=1;if(this.keysPressed.ArrowUp)kIY-=1;if(this.keysPressed.ArrowDown)kIY+=1;}
-        
-        // Joystick Input
         const joystick = this.joysticks[playerIndex];
         if (joystick.isActive) { kIX += joystick.dx; kIY += joystick.dy; }
-        
         const kM=(kIX!==0||kIY!==0);
-        
         if(kM){
             const len = Math.sqrt(kIX*kIX + kIY*kIY);
             if (len > 1) { kIX /= len; kIY /= len; }
@@ -229,12 +277,10 @@ const Game = {
         }else{
             player.vx=0;player.vy=0;player.isMoving=false;
         }
-
         let nX=player.x+player.vx*this.deltaTime,nY=player.y+player.vy*this.deltaTime;const phw=player.width/4,phh=player.height/2.5;
         if(player.vx!==0){const cTX=(player.vx>0)?Math.floor((nX+phw-1)/this.TILE_SIZE):Math.floor((nX-phw)/this.TILE_SIZE);const Y1=Math.floor((player.y-phh+1)/this.TILE_SIZE),Y2=Math.floor((player.y+phh-1)/this.TILE_SIZE);if(this.isTileSolid(this.getTileTypeAt(cTX,Y1))||this.isTileSolid(this.getTileTypeAt(cTX,Y2))){nX=(player.vx>0)?cTX*this.TILE_SIZE-phw:(cTX+1)*this.TILE_SIZE+phw;player.vx=0;}}
         player.x=nX;if(player.vy!==0){const cTY=(player.vy>0)?Math.floor((nY+phh-1)/this.TILE_SIZE):Math.floor((nY-phh)/this.TILE_SIZE);const X1=Math.floor((player.x-phw+1)/this.TILE_SIZE),X2=Math.floor((player.x+phw-1)/this.TILE_SIZE);if(this.isTileSolid(this.getTileTypeAt(X1,cTY))||this.isTileSolid(this.getTileTypeAt(X2,cTY))){nY=(player.vy>0)?cTY*this.TILE_SIZE-phh:(cTY+1)*this.TILE_SIZE+phh;player.vy=0;}}
         player.y=nY;player.x=Math.max(phw,Math.min(player.x,this.MAP_WIDTH_PX-phw));player.y=Math.max(phh,Math.min(player.y,this.MAP_HEIGHT_PX-phh));
-        const curTX=Math.floor(player.x/this.TILE_SIZE),curTY=Math.floor(player.y/this.TILE_SIZE); // if(this.getTileTypeAt(curTX,curTY)===this.TILE_WATER){this.setGameState(this.STATE_GAME_OVER);return;}
     },
     updatePlayerAnimation:function(player){if(player.isMoving){player.walkAnimTimer+=this.deltaTime;if(player.walkAnimTimer>=this.animation.bunnyWalkFrameDuration){player.walkAnimTimer=0;player.walkFrame=(player.walkFrame+1)%4;}}},
 
@@ -261,33 +307,47 @@ const Game = {
         const sX=Math.floor(camera.x/this.TILE_SIZE),sY=Math.floor(camera.y/this.TILE_SIZE),eX=Math.ceil((camera.x+viewportWidth)/this.TILE_SIZE),eY=Math.ceil((camera.y+this.canvas.height)/this.TILE_SIZE);
         let canopiesToDraw = [];
 
-        // Pass 1: Draw base terrain (water and grass tiles)
+        // Draw water tiles first
         for(let y=sY;y<eY;y++){for(let x=sX;x<eX;x++){if(x<0||x>=this.MAP_WIDTH_TILES||y<0||y>=this.MAP_HEIGHT_TILES)continue;
             const tT=this.map[y][x],dX=x*this.TILE_SIZE,dY=y*this.TILE_SIZE;
-            if(tT===this.TILE_WATER){this.ctx.drawImage(this.assets.water,dX,dY,this.TILE_SIZE,this.TILE_SIZE);}else{this.ctx.drawImage(this.assets.grass,dX,dY,this.TILE_SIZE,this.TILE_SIZE);}
+            if(tT===this.TILE_WATER){this.ctx.drawImage(this.assets.water,dX,dY,this.TILE_SIZE,this.TILE_SIZE);}
         }}
         
-        // Pass 2: Draw shorelines
-        this.ctx.lineCap='round';this.ctx.lineJoin='round';
-        this.ctx.strokeStyle=this.assets.sandPattern;this.ctx.lineWidth=32;
-        for(const path of this.shorelinePaths){this.ctx.beginPath();this.ctx.moveTo(path[0].x,path[0].y);for(let i=1;i<path.length;i++){this.ctx.lineTo(path[i].x,path[i].y);}this.ctx.closePath();this.ctx.stroke();}
-        this.ctx.fillStyle=this.assets.grassPattern;
-        for(const path of this.shorelinePaths){this.ctx.beginPath();this.ctx.moveTo(path[0].x,path[0].y);for(let i=1;i<path.length;i++){this.ctx.lineTo(path[i].x,path[i].y);}this.ctx.closePath();this.ctx.fill();}
+        // Draw shorelines if enabled
+        if (this.ui.shorelineOpaque) {
+            this.ctx.lineCap='round';this.ctx.lineJoin='round';
+            this.ctx.strokeStyle=this.assets.sandPattern;this.ctx.lineWidth=32;
+            for(const path of this.shorelinePaths){this.ctx.beginPath();this.ctx.moveTo(path[0].x,path[0].y);for(let i=1;i<path.length;i++){this.ctx.lineTo(path[i].x,path[i].y);}this.ctx.closePath();this.ctx.stroke();}
+        }
+        
+        // Draw grass layer if enabled. This now includes drawing grass under trees and rocks.
+        if (this.ui.grassOpaque) {
+            this.ctx.fillStyle=this.assets.grassPattern;
+            for(let y=sY; y<eY; y++){
+                for(let x=sX; x<eX; x++){
+                    if(x<0 || x>=this.MAP_WIDTH_TILES || y<0 || y>=this.MAP_HEIGHT_TILES) continue;
+                    const tileType = this.map[y][x];
+                    // Draw grass for grass, tree, or rock tiles.
+                    if(tileType === this.TILE_GRASS || tileType === this.TILE_TREE || tileType === this.TILE_ROCK){
+                        this.ctx.fillRect(x * this.TILE_SIZE, y * this.TILE_SIZE, this.TILE_SIZE, this.TILE_SIZE);
+                    }
+                }
+            }
+        }
 
-        // Pass 3: Draw ground-level objects and collect canopy locations
+        // Draw ground-level objects (trees, rocks) on top of the grass/water layers
         for(let y=sY;y<eY;y++){for(let x=sX;x<eX;x++){if(x<0||x>=this.MAP_WIDTH_TILES||y<0||y>=this.MAP_HEIGHT_TILES)continue;
             const tT=this.map[y][x],dX=x*this.TILE_SIZE,dY=y*this.TILE_SIZE;
-            // CONFIRMED: A visible graphic is ALWAYS drawn for every logical obstacle.
             if(tT===this.TILE_TREE){this.ctx.drawImage(this.assets.treeBase,dX,dY);canopiesToDraw.push({x:dX, y:dY});}
             else if(tT===this.TILE_ROCK){this.ctx.drawImage(this.assets.rock,dX,dY,this.TILE_SIZE,this.TILE_SIZE);}
         }}
         
-        // Pass 4: Draw decorations, carrots, and players
+        // Draw decorations, carrots, and players
         for(const d of this.decorations){const dX=d.x*this.TILE_SIZE,dY=d.y*this.TILE_SIZE;if(d.type===this.FLOWER_TYPE_RED)this.ctx.drawImage(this.assets.flowerRed,dX,dY,this.TILE_SIZE,this.TILE_SIZE);else if(d.type===this.FLOWER_TYPE_YELLOW)this.ctx.drawImage(this.assets.flowerYellow,dX,dY,this.TILE_SIZE,this.TILE_SIZE);}
         for(const c of this.carrots){if(!c.collected){const dX=c.x*this.TILE_SIZE,dY=c.y*this.TILE_SIZE;this.ctx.drawImage(this.assets.carrot,dX,dY,this.TILE_SIZE,this.TILE_SIZE);}}
         for(let i=0;i<this.players.length;i++){this.renderPlayer(this.players[i],i);}
 
-        // Final Pass: Draw tree canopies (which appear over players) and sparkles
+        // Draw tree canopies (which appear over players) and sparkles
         for(const canopy of canopiesToDraw){this.ctx.drawImage(this.assets.treeCanopy, canopy.x - this.TILE_SIZE/2, canopy.y - this.TILE_SIZE*1.5); }
         this.ctx.fillStyle='rgba(220,240,255,0.8)';for(const s of this.animation.sparkles){const dX=Math.floor(s.worldX),dY=Math.floor(s.worldY);this.ctx.fillRect(dX,dY,2,2);}
         this.ctx.restore();
@@ -299,7 +359,28 @@ const Game = {
         const frame=frameSet[frameIndex];
         this.ctx.drawImage(frame,sX,sY);
     },
-    renderUI:function(){this.ctx.fillStyle='#FFFFFF';this.ctx.font="18px 'Courier New',monospace";const b=this.ui.restartButton;this.ctx.textAlign='left';this.ctx.textBaseline='top';this.ctx.fillText(`Level: ${this.level}`,10,15);this.ctx.fillText(`Carrots: ${this.carrotsCollected}/${this.TOTAL_CARROTS_PER_LEVEL}`,10,15+22);this.ctx.strokeStyle='#FFFFFF';this.ctx.strokeRect(b.x,b.y,b.width,b.height);this.ctx.textAlign='center';this.ctx.textBaseline='middle';this.ctx.fillText(b.text,b.x+b.width/2,b.y+b.height/2);},
+    renderUI:function(){
+        this.ctx.fillStyle='#FFFFFF';this.ctx.font="18px 'Courier New',monospace";
+        this.ctx.textAlign='left';this.ctx.textBaseline='top';
+        this.ctx.fillText(`Level: ${this.level}`,10,15);this.ctx.fillText(`Carrots: ${this.carrotsCollected}/${this.TOTAL_CARROTS_PER_LEVEL}`,10,15+22);
+        
+        this.ctx.strokeStyle='#FFFFFF';
+        this.ctx.textAlign='center';this.ctx.textBaseline='middle';
+        
+        const b=this.ui.restartButton;
+        this.ctx.strokeRect(b.x,b.y,b.width,b.height);
+        this.ctx.fillText(b.text,b.x+b.width/2,b.y+b.height/2);
+
+        const gtb = this.ui.grassToggleButton;
+        gtb.text = `Grass: ${this.ui.grassOpaque ? 'Opaque' : 'See-Thru'}`;
+        this.ctx.strokeRect(gtb.x, gtb.y, gtb.width, gtb.height);
+        this.ctx.fillText(gtb.text, gtb.x + gtb.width/2, gtb.y + gtb.height/2);
+        
+        const stb = this.ui.shorelineToggleButton;
+        stb.text = `Shore: ${this.ui.shorelineOpaque ? 'Opaque' : 'See-Thru'}`;
+        this.ctx.strokeRect(stb.x, stb.y, stb.width, stb.height);
+        this.ctx.fillText(stb.text, stb.x + stb.width/2, stb.y + stb.height/2);
+    },
     renderJoysticks:function(){if(this.currentState!==this.STATE_PLAYING)return;this.ctx.save();for(const joystick of this.joysticks){if(joystick.isActive){this.ctx.beginPath();this.ctx.arc(joystick.startX,joystick.startY,joystick.maxRadius,0,Math.PI*2);this.ctx.fillStyle='rgba(255,255,255,0.2)';this.ctx.fill();this.ctx.beginPath();this.ctx.arc(joystick.currentX,joystick.currentY,joystick.maxRadius/2,0,Math.PI*2);this.ctx.fillStyle='rgba(255,255,255,0.4)';this.ctx.fill();}}this.ctx.restore();},
     renderStartScreen:function(){this.ctx.fillStyle='#5c8a42';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);this.ctx.fillStyle='#FFFFFF';this.ctx.font="bold 30px 'Courier New',monospace";this.ctx.textAlign='center';this.ctx.fillText("BUNNY QUEST: 2 PLAYER",this.canvas.width/2,this.canvas.height*0.2);this.ctx.font="18px 'Courier New',monospace";
     const i=["P1 (Left): WASD Keys to Move.","P2 (Right): Arrow Keys to Move.","Collect 4 carrots together.","","TAP OR CLICK TO START"];let yP=this.canvas.height*0.4;for(const l of i){this.ctx.fillText(l,this.canvas.width/2,yP);yP+=25;}this.ctx.drawImage(this.assets.bunnyFramesP1[0], this.canvas.width/2 - 24, yP);},
@@ -307,13 +388,34 @@ const Game = {
     renderNextLevelMessage:function(){this.ctx.fillStyle='rgba(0,0,0,0.5)';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);this.ctx.fillStyle='#FFFF00';this.ctx.font="bold 30px 'Courier New',monospace";this.ctx.textAlign='center';this.ctx.textBaseline='middle';this.ctx.fillText("NEXT LEVEL!",this.canvas.width/2,this.canvas.height/2);},
     
     // --- Event Listeners and Input Handling ---
-    resizeGame:function(){this.canvas.width=window.innerWidth;this.canvas.height=window.innerHeight;this.ctx.imageSmoothingEnabled=false;this.ui.restartButton.x=this.canvas.width-this.ui.restartButton.width-10;this.ui.restartButton.y=10;for(let i=0;i<2;i++)if(this.currentState===this.STATE_PLAYING)this.updateCamera(i);},
+    resizeGame:function(){
+        this.canvas.width=window.innerWidth;
+        this.canvas.height=window.innerHeight;
+        this.ctx.imageSmoothingEnabled=false;
+        this.ui.restartButton.x=this.canvas.width-this.ui.restartButton.width-10;
+        this.ui.restartButton.y=10;
+        this.ui.grassToggleButton.x = this.canvas.width - this.ui.grassToggleButton.width - 10;
+        this.ui.grassToggleButton.y = this.ui.restartButton.y + this.ui.restartButton.height + 5;
+        this.ui.shorelineToggleButton.x = this.canvas.width - this.ui.shorelineToggleButton.width - 10;
+        this.ui.shorelineToggleButton.y = this.ui.grassToggleButton.y + this.ui.grassToggleButton.height + 5;
+        for(let i=0;i<2;i++)if(this.currentState===this.STATE_PLAYING)this.updateCamera(i);
+    },
     addEventListeners:function(){window.addEventListener('resize',this.resizeGame.bind(this));this.canvas.addEventListener('mousedown',this.handleMouseDown.bind(this));this.canvas.addEventListener('touchstart',this.handleTouchStart.bind(this),{passive:false});this.canvas.addEventListener('touchmove',this.handleTouchMove.bind(this),{passive:false});this.canvas.addEventListener('touchend',this.handleTouchEnd.bind(this),{passive:false});this.canvas.addEventListener('touchcancel',this.handleTouchEnd.bind(this),{passive:false});window.addEventListener('keydown',this.handleKeyDown.bind(this));window.addEventListener('keyup',this.handleKeyUp.bind(this));},
     handleKeyDown:function(e){let key=e.key;if(key.length===1)key=key.toLowerCase();if(key in this.keysPressed){this.keysPressed[key]=true;if(this.currentState===this.STATE_PLAYING)e.preventDefault();}},
     handleKeyUp:function(e){let key=e.key;if(key.length===1)key=key.toLowerCase();if(key in this.keysPressed){this.keysPressed[key]=false;if(this.currentState===this.STATE_PLAYING)e.preventDefault();}},
     handleMouseDown:function(e){const r=this.canvas.getBoundingClientRect();this.processPointerDown(e.clientX-r.left,e.clientY-r.top);},
-    processPointerDown:function(x,y){if(this.currentState===this.STATE_START_SCREEN||this.currentState===this.STATE_GAME_OVER){this.startGame();return true;}
-    if(this.currentState===this.STATE_PLAYING){const b=this.ui.restartButton;if(x>=b.x&&x<=b.x+b.width&&y>=b.y&&y<=b.y+b.height){this.restartCurrentLevel();return true;}}return false;},
+    processPointerDown:function(x,y){
+        if(this.currentState===this.STATE_START_SCREEN||this.currentState===this.STATE_GAME_OVER){this.startGame();return true;}
+        if(this.currentState===this.STATE_PLAYING){
+            const b=this.ui.restartButton;
+            if(x>=b.x&&x<=b.x+b.width&&y>=b.y&&y<=b.y+b.height){this.restartCurrentLevel();return true;}
+            const gtb = this.ui.grassToggleButton;
+            if(x>=gtb.x&&x<=gtb.x+gtb.width&&y>=gtb.y&&y<=gtb.y+gtb.height){this.ui.grassOpaque = !this.ui.grassOpaque; return true;}
+            const stb = this.ui.shorelineToggleButton;
+            if(x>=stb.x&&x<=stb.x+stb.width&&y>=stb.y&&y<=stb.y+stb.height){this.ui.shorelineOpaque = !this.ui.shorelineOpaque; return true;}
+        }
+        return false;
+    },
     handleTouchStart:function(e){e.preventDefault();const r=this.canvas.getBoundingClientRect();const viewportWidth=this.canvas.width/2;for(const touch of e.changedTouches){const x=touch.clientX-r.left;const y=touch.clientY-r.top;if(this.processPointerDown(x,y)){continue;}if(this.currentState!==this.STATE_PLAYING)continue;const playerIndex=(x<viewportWidth)?0:1;const joystick=this.joysticks[playerIndex];if(!joystick.isActive){joystick.isActive=true;joystick.touchId=touch.identifier;joystick.startX=x;joystick.startY=y;joystick.currentX=x;joystick.currentY=y;joystick.dx=0;joystick.dy=0;}}},
     handleTouchMove:function(e){e.preventDefault();const r=this.canvas.getBoundingClientRect();for(const touch of e.changedTouches){for(const joystick of this.joysticks){if(joystick.isActive&&joystick.touchId===touch.identifier){joystick.currentX=touch.clientX-r.left;joystick.currentY=touch.clientY-r.top;const vecX=joystick.currentX-joystick.startX;const vecY=joystick.currentY-joystick.startY;let dist=Math.sqrt(vecX*vecX+vecY*vecY);if(dist<joystick.deadZone){joystick.dx=0;joystick.dy=0;}else{joystick.dx=vecX/dist;joystick.dy=vecY/dist;if(dist>joystick.maxRadius){joystick.currentX=joystick.startX+joystick.dx*joystick.maxRadius;joystick.currentY=joystick.startY+joystick.dy*joystick.maxRadius;}}break;}}}},
     handleTouchEnd:function(e){e.preventDefault();for(const touch of e.changedTouches){for(const joystick of this.joysticks){if(joystick.isActive&&joystick.touchId===touch.identifier){joystick.isActive=false;joystick.touchId=null;joystick.dx=0;joystick.dy=0;break;}}}},
