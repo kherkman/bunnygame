@@ -405,7 +405,25 @@ const Game = {
     handleKeyUp:function(e){let key=e.key;if(key.length===1)key=key.toLowerCase();if(key in this.keysPressed){this.keysPressed[key]=false;if(this.currentState===this.STATE_PLAYING)e.preventDefault();}},
     handleMouseDown:function(e){const r=this.canvas.getBoundingClientRect();this.processPointerDown(e.clientX-r.left,e.clientY-r.top);},
     processPointerDown:function(x,y){
-        if(this.currentState===this.STATE_START_SCREEN||this.currentState===this.STATE_GAME_OVER){this.startGame();return true;}
+        if(this.currentState===this.STATE_START_SCREEN||this.currentState===this.STATE_GAME_OVER){
+            const elem = document.documentElement;
+            // Request fullscreen
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().catch(err => { console.error(`Fullscreen API error: ${err.message}`); });
+            } else if (elem.webkitRequestFullscreen) { // Safari
+                elem.webkitRequestFullscreen().catch(err => { console.error(`Webkit Fullscreen API error: ${err.message}`); });
+            } else if (elem.msRequestFullscreen) { // IE11
+                elem.msRequestFullscreen();
+            }
+
+            // Lock screen orientation
+            if (screen.orientation && typeof screen.orientation.lock === 'function') {
+                screen.orientation.lock('landscape').catch(err => { console.error(`Orientation lock error: ${err.message}`); });
+            }
+
+            this.startGame();
+            return true;
+        }
         if(this.currentState===this.STATE_PLAYING){
             const b=this.ui.restartButton;
             if(x>=b.x&&x<=b.x+b.width&&y>=b.y&&y<=b.y+b.height){this.restartCurrentLevel();return true;}
